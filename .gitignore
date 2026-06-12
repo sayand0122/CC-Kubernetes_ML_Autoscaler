@@ -1,0 +1,5 @@
+load_tester/
+venv/
+.python-version
+kubectl
+kubectl.sha256

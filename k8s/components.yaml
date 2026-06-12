@@ -1,0 +1,147 @@
+# ── Dispatcher ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatcher
+  labels:
+    app: dispatcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dispatcher
+  template:
+    metadata:
+      labels:
+        app: dispatcher
+    spec:
+      containers:
+      - name: dispatcher
+        image: dispatcher:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8081
+        env:
+        - name: BACKEND_URL
+          value: "http://ml-service:8080"
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatcher
+spec:
+  selector:
+    app: dispatcher
+  ports:
+  - port: 8081
+    targetPort: 8081
+  type: NodePort    # exposed so load_tester can reach it from host
+---
+
+# ── Monitoring ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitoring
+  labels:
+    app: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitoring
+  template:
+    metadata:
+      labels:
+        app: monitoring
+    spec:
+      serviceAccountName: monitoring-sa
+      containers:
+      - name: monitoring
+        image: monitoring:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8082
+        env:
+        - name: DISPATCHER_URL
+          value: "http://dispatcher:8081"
+        - name: DEPLOYMENT_NAME
+          value: "ml-service"
+        - name: NAMESPACE
+          value: "default"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+      volumes:
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitoring
+spec:
+  selector:
+    app: monitoring
+  ports:
+  - port: 8082
+    targetPort: 8082
+  type: NodePort
+---
+
+# ── Autoscaler ────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: autoscaler
+  labels:
+    app: autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: autoscaler
+  template:
+    metadata:
+      labels:
+        app: autoscaler
+    spec:
+      serviceAccountName: autoscaler-sa
+      containers:
+      - name: autoscaler
+        image: autoscaler:latest
+        imagePullPolicy: Never
+        env:
+        - name: MONITORING_URL
+          value: "http://monitoring:8082"
+        - name: DEPLOYMENT_NAME
+          value: "ml-service"
+        - name: NAMESPACE
+          value: "default"
+        - name: MIN_REPLICAS
+          value: "1"
+        - name: MAX_REPLICAS
+          value: "10"
+        - name: SLO_P99_TARGET
+          value: "0.4"
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
