@@ -1,5 +1,6 @@
 #!/bin/bash
 cd "$(dirname "$0")"
+# echo "Current directory: $(pwd)"
 
 echo "========================================"
 echo " ML Autoscaler — Starting Up"
@@ -60,14 +61,19 @@ echo " Monitoring:  $MONITORING_URL"
 echo "========================================"
 
 # 8 - Run all experiments
-echo ""
-echo "▶ Running all experiments (~33 mins)..."
-python scripts/run_experiment.py --all
+# echo ""
+# echo "▶ Running all experiments (~33 mins)..."
+# python scripts/run_experiment.py --all
 
 # 9 - Plot results
+# echo ""
+# echo "▶ Plotting results..."
+# python scripts/plot_results.py
+
+# 10 - Test Single results
 echo ""
-echo "▶ Plotting results..."
-python scripts/plot_results.py
+echo "▶ To test a single image: curl -X POST http://192.168.49.2:32607/predict -F 'image=@path/to/image.jpg'"
+echo "▶ To test a single image: curl -X POST $DISPATCHER_URL -F 'image=@path/to/image.jpg'"
 
 echo ""
 echo "========================================"

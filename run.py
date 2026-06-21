@@ -1,11 +1,13 @@
 """
 Load Tester
-Sends queries to the dispatcher following a workload pattern file.
-Each number in the file = QPS for that second.
+
+This script replays a workload trace against the dispatcher service.
+Each line in the `workload.txt` file represents the number of requests to send in one second.
+It is intended for load generation and latency measurement during scaling experiments.
 
 Usage:
-  python load_tester/run.py --dispatcher-url http://192.168.49.2:30906
-  python load_tester/run.py --dispatcher-url http://192.168.49.2:30906 --workload-file workload.txt
+  python run.py --dispatcher-url http://192.168.49.2:30906
+  python run.py --dispatcher-url http://192.168.49.2:30906 --workload-file workload.txt
 """
 
 import os
@@ -18,11 +20,16 @@ import numpy as np
 
 
 def load_workload(path: str) -> list[int]:
+    """Read a workload file and return one integer per second.
+
+    The file contains whitespace-separated QPS values.
+    """
     with open(path) as f:
         return [int(x) for x in f.read().split()]
 
 
 def get_images(image_dir: str) -> list[str]:
+    """Collect available image files for the load test."""
     images = (glob.glob(os.path.join(image_dir, "*.jpg")) +
               glob.glob(os.path.join(image_dir, "*.JPEG")) +
               glob.glob(os.path.join(image_dir, "*.jpeg")) +
@@ -33,6 +40,10 @@ def get_images(image_dir: str) -> list[str]:
 
 
 def send_request(url: str, image_path: str, results: dict, lock: threading.Lock):
+    """Send a single image request to the dispatcher and record latency.
+
+    Uses a shared results dictionary protected by a lock because requests are sent in parallel threads.
+    """
     t0 = time.perf_counter()
     try:
         with open(image_path, "rb") as f:
@@ -50,6 +61,7 @@ def send_request(url: str, image_path: str, results: dict, lock: threading.Lock)
 
 
 def run_workload(dispatcher_url: str, image_dir: str, workload: list[int]):
+    """Replay the workload one second at a time and print aggregate stats."""
     images  = get_images(image_dir)
     url     = dispatcher_url.rstrip("/") + "/predict"
     results = {"ok": 0, "err": 0, "latencies": []}
@@ -65,6 +77,8 @@ def run_workload(dispatcher_url: str, image_dir: str, workload: list[int]):
     for second, qps in enumerate(workload):
         t_start = time.time()
 
+        # Send up to `qps` requests spread evenly during this second.
+        # Each request is executed in a separate daemon thread.
         if qps > 0:
             interval = 1.0 / qps
             for _ in range(qps):
@@ -95,7 +109,7 @@ def run_workload(dispatcher_url: str, image_dir: str, workload: list[int]):
         elapsed = time.time() - t_start
         time.sleep(max(0, 1.0 - elapsed))
 
-    # Wait for in-flight requests
+    # Wait for in-flight requests to finish before computing final statistics.
     time.sleep(3)
 
     # Final stats

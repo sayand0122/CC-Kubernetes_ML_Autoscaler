@@ -34,11 +34,12 @@ ACTIVE_REQ   = Gauge("dispatcher_active_requests",   "Requests in-flight")
 
 # ── In-memory latency store (rolling 10-min window) ───────────────────────────
 _window_secs = 600
-_records: deque = deque()   # (timestamp, latency_s)
+_records: deque = deque()   # stores tuples of (timestamp, latency_s)
 _lock = threading.Lock()
 
 
 def _record_latency(lat: float):
+    """Append a latency sample and trim old samples from the sliding window."""
     now = time.time()
     with _lock:
         _records.append((now, lat))
@@ -48,6 +49,7 @@ def _record_latency(lat: float):
 
 
 def _get_stats() -> dict:
+    """Compute latency summary statistics for the recent sliding window."""
     now = time.time()
     with _lock:
         cutoff = now - _window_secs

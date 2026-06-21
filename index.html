@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Image Classifier</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0a0f;
+      color: #f0f0f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 2rem 1rem;
+      overflow-x: hidden;
+    }
+
+    canvas#bg {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 560px;
+    }
+
+    h1 {
+      font-size: 20px;
+      font-weight: 500;
+      margin-bottom: 1.5rem;
+      color: #f0f0f0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h1 svg { width: 22px; height: 22px; }
+
+    .card {
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 0.5px solid rgba(255,255,255,0.12);
+      border-radius: 14px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .section-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 1.5px dashed rgba(255,255,255,0.2);
+      border-radius: 10px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(255,255,255,0.03);
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .drop-zone:hover { background: rgba(255,255,255,0.07); border-color: rgba(100,180,255,0.5); }
+    .drop-zone.dragging { border-color: #64b4ff; background: rgba(100,180,255,0.08); }
+
+    #preview-img {
+      max-width: 100%; max-height: 220px;
+      border-radius: 8px; object-fit: contain;
+      display: none; margin: 0 auto;
+    }
+
+    .drop-icon {
+      width: 40px; height: 40px;
+      margin: 0 auto 12px;
+      opacity: 0.35;
+    }
+
+    #drop-hint p.main { font-size: 15px; color: rgba(255,255,255,0.7); margin-bottom: 4px; }
+    #drop-hint p.sub  { font-size: 13px; color: rgba(255,255,255,0.35); }
+    #file-input { display: none; }
+    #file-name  { font-size: 13px; color: rgba(255,255,255,0.35); margin-top: 8px; text-align: center; }
+    #error-msg  { color: #ff6b6b; font-size: 13px; margin-top: 8px; display: none; }
+    #loading-msg {
+      font-size: 13px; color: rgba(255,255,255,0.4);
+      margin-top: 8px; display: none; text-align: center;
+    }
+
+    #upload-btn {
+      width: 100%; padding: 10px; font-size: 15px; margin-top: 1rem;
+      border-radius: 8px; border: 0.5px solid rgba(255,255,255,0.2);
+      background: rgba(100,180,255,0.1); color: #cce8ff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: background 0.15s; font-family: 'Inter', sans-serif;
+    }
+    #upload-btn:hover    { background: rgba(100,180,255,0.2); }
+    #upload-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    #upload-btn svg      { width: 16px; height: 16px; }
+
+    /* Results */
+    #results-section { display: none; }
+    #top-result {
+      margin-bottom: 1.25rem; padding-bottom: 1rem;
+      border-bottom: 0.5px solid rgba(255,255,255,0.1);
+    }
+    #top-result p.label-small { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 4px; }
+    #top-label { font-size: 20px; font-weight: 500; color: #f0f0f0; }
+    .top-badge {
+      display: inline-block; background: rgba(100,180,255,0.15);
+      color: #64b4ff; font-size: 11px; padding: 2px 8px;
+      border-radius: 6px; margin-left: 8px; vertical-align: middle;
+    }
+    #top-conf { font-size: 13px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+
+    .result-row { margin-bottom: 14px; }
+    .result-label { font-size: 14px; color: rgba(255,255,255,0.8); display: flex; justify-content: space-between; }
+    .result-pct   { font-size: 13px; color: rgba(255,255,255,0.4); }
+    .result-bar-bg   { background: rgba(255,255,255,0.08); border-radius: 999px; height: 8px; overflow: hidden; margin-top: 4px; }
+    .result-bar-fill { height: 8px; border-radius: 999px; background: linear-gradient(90deg,#378ADD,#64b4ff); transition: width 0.4s ease; }
+
+    #latency-info {
+      font-size: 12px; color: rgba(255,255,255,0.25);
+      margin-top: 1rem; border-top: 0.5px solid rgba(255,255,255,0.08);
+      padding-top: 10px;
+    }
+    .results-sub-label { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 12px; }
+
+    #rickroll-hint {
+      position: fixed; bottom: 18px; right: 22px;
+      font-size: 11px; color: rgba(255,255,255,0.15);
+      z-index: 10; pointer-events: none; letter-spacing: 0.04em;
+    }
+
+    /* Spinner animation */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinning { animation: spin 1s linear infinite; display: inline-block; }
+  </style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<div class="container">
+  <h1>
+    <svg viewBox="0 0 24 24" fill="none" stroke="#64b4ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+      <polyline points="21 15 16 10 5 21"/>
+    </svg>
+    Image Classifier
+  </h1>
+
+  <!-- Upload -->
+  <div class="card">
+    <p class="section-label">Upload image</p>
+    <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <img id="preview-img" src="" alt="preview" />
+      <div id="drop-hint">
+        <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p class="main">Drop image here or click to browse</p>
+        <p class="sub">JPG, PNG, WEBP supported</p>
+      </div>
+    </div>
+    <input type="file" id="file-input" accept="image/*" />
+    <div id="file-name"></div>
+    <div id="error-msg"></div>
+    <div id="loading-msg">
+      <span class="spinning">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+      </span>
+      Classifying...
+    </div>
+    <button id="upload-btn" disabled onclick="classify()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+      Classify image
+    </button>
+  </div>
+
+  <!-- Results -->
+  <div class="card" id="results-section">
+    <p class="section-label">Results</p>
+    <div id="top-result">
+      <p class="label-small">Top prediction</p>
+      <p id="top-label"></p>
+      <p id="top-conf"></p>
+    </div>
+    <p class="results-sub-label">Top 5 predictions</p>
+    <div id="results-list"></div>
+    <p id="latency-info"></p>
+  </div>
+</div>
+
+<div id="rickroll-hint">psst... find the red particle 👀</div>
+
+<script>
+  // ── File handling ──────────────────────────────────────────────────────────
+  let selectedFile = null;
+  const fileInput  = document.getElementById('file-input');
+  const dropZone   = document.getElementById('drop-zone');
+  const previewImg = document.getElementById('preview-img');
+  const dropHint   = document.getElementById('drop-hint');
+  const fileNameEl = document.getElementById('file-name');
+  const uploadBtn  = document.getElementById('upload-btn');
+  const errorMsg   = document.getElementById('error-msg');
+  const loadingMsg = document.getElementById('loading-msg');
+
+  function handleFile(file) {
+    if (!file || !file.type.startsWith('image/')) { showError('Please select a valid image file.'); return; }
+    selectedFile = file;
+    fileNameEl.textContent = file.name;
+    uploadBtn.disabled = false;
+    errorMsg.style.display = 'none';
+    document.getElementById('results-section').style.display = 'none';
+    const reader = new FileReader();
+    reader.onload = e => {
+      previewImg.src = e.target.result;
+      previewImg.style.display = 'block';
+      dropHint.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  }
+
+  fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragging'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+  dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragging'); handleFile(e.dataTransfer.files[0]); });
+
+  function showError(msg) { errorMsg.textContent = msg; errorMsg.style.display = 'block'; }
+
+  // ── Classify ───────────────────────────────────────────────────────────────
+  async function classify() {
+    if (!selectedFile) return;
+    uploadBtn.disabled = true;
+    loadingMsg.style.display = 'block';
+    errorMsg.style.display = 'none';
+    document.getElementById('results-section').style.display = 'none';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    const t0 = performance.now();
+
+    try {
+      const res = await fetch('http://localhost:5000/classify', { method: 'POST', body: formData });
+      if (!res.ok) throw new Error('Server error: ' + res.status);
+      const data = await res.json();
+      const latency = ((performance.now() - t0) / 1000).toFixed(3);
+      renderResults(data, latency);
+    } catch (err) {
+      showError('Could not connect. Make sure the bridge is running and the URL is correct.');
+    } finally {
+      loadingMsg.style.display = 'none';
+      uploadBtn.disabled = false;
+    }
+  }
+
+  function renderResults(data, latency) {
+    const results     = document.getElementById('results-section');
+    const list        = document.getElementById('results-list');
+    list.innerHTML    = '';
+    const predictions = data.predictions || data.results || data.labels || [];
+    if (!predictions.length) { showError('No predictions returned.'); return; }
+
+    const top = predictions[0];
+    document.getElementById('top-label').innerHTML = top.label + '<span class="top-badge">Top pick</span>';
+    document.getElementById('top-conf').textContent = 'Confidence: ' + (top.confidence * 100).toFixed(1) + '%';
+
+    predictions.slice(0, 5).forEach((p, i) => {
+      const pct = (p.confidence * 100).toFixed(1);
+      const div = document.createElement('div');
+      div.className = 'result-row';
+      div.innerHTML = `
+        <div class="result-label">
+          <span>${i + 1}. ${p.label}</span>
+          <span class="result-pct">${pct}%</span>
+        </div>
+        <div class="result-bar-bg">
+          <div class="result-bar-fill" style="width:${pct}%"></div>
+        </div>`;
+      list.appendChild(div);
+    });
+
+    const serverLatency = data.latency_s ? data.latency_s.toFixed(3) + 's' : 'N/A';
+    document.getElementById('latency-info').textContent =
+      `Round-trip: ${latency}s  |  Server-side: ${serverLatency}`;
+
+    results.style.display = 'block';
+  }
+
+  // ── Particle background ────────────────────────────────────────────────────
+  const canvas = document.getElementById('bg');
+  const ctx    = canvas.getContext('2d');
+  let W, H, particles;
+  let mouse = { x: -9999, y: -9999 };
+
+  function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  function initParticles() {
+    particles = [];
+    const count = Math.floor((W * H) / 11000);
+    for (let i = 0; i < count; i++) {
+      particles.push({ x: rnd(0,W), y: rnd(0,H), vx: rnd(-0.3,0.3), vy: rnd(-0.3,0.3), r: rnd(2,4), rickroll: false });
+    }
+    const rr = particles[Math.floor(Math.random() * particles.length)];
+    rr.rickroll = true; rr.r = 4;
+  }
+
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dd = dist(particles[i], particles[j]);
+        if (dd < 130) {
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(100,180,255,${(1 - dd/130)*0.22})`;
+          ctx.lineWidth = 0.6;
+          ctx.stroke();
+        }
+      }
+    }
+    for (const p of particles) {
+      const dm = dist(p, mouse);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, dm < 60 ? p.r + 2 : p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.rickroll
+        ? `rgba(255,68,68,${dm < 60 ? 0.9 : 0.4})`
+        : `rgba(100,180,255,${dm < 60 ? 0.9 : 0.4})`;
+      ctx.fill();
+
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < p.r)     { p.x = p.r;     p.vx =  Math.abs(p.vx); }
+      if (p.x > W - p.r) { p.x = W - p.r; p.vx = -Math.abs(p.vx); }
+      if (p.y < p.r)     { p.y = p.r;     p.vy =  Math.abs(p.vy); }
+      if (p.y > H - p.r) { p.y = H - p.r; p.vy = -Math.abs(p.vy); }
+
+      if (dm < 80) {
+        const angle = Math.atan2(p.y - mouse.y, p.x - mouse.x);
+        p.x += Math.cos(angle) * 0.9;
+        p.y += Math.sin(angle) * 0.9;
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+
+  window.addEventListener('resize', () => { resize(); initParticles(); });
+  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+
+  canvas.style.pointerEvents = 'auto';
+  canvas.addEventListener('click', e => {
+    for (const p of particles) {
+      if (p.rickroll && dist(p, { x: e.clientX, y: e.clientY }) < p.r + 14) {
+        window.open('https://www.youtube.com/watch?v=dQw4w9WgXcQ', '_blank');
+        break;
+      }
+    }
+  });
+  canvas.addEventListener('mousemove', e => {
+    let onRR = false;
+    for (const p of particles) {
+      if (p.rickroll && dist(p, { x: e.clientX, y: e.clientY }) < p.r + 14) { onRR = true; break; }
+    }
+    canvas.style.cursor = onRR ? 'pointer' : 'default';
+  });
+
+  resize(); initParticles(); draw();
+</script>
+</body>
+</html>

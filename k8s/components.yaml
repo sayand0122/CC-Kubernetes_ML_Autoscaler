@@ -138,7 +138,7 @@ spec:
         - name: MIN_REPLICAS
           value: "1"
         - name: MAX_REPLICAS
-          value: "10"
+          value: "20"
         - name: SLO_P99_TARGET
           value: "0.4"
         resources:

@@ -44,6 +44,7 @@ _lat_lock = threading.Lock()
 
 
 def _preprocess(file_bytes: bytes) -> torch.Tensor:
+    """Load raw image bytes and convert them to a model-ready tensor."""
     img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
     return preprocessor(img).unsqueeze(0)
 

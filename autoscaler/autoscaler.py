@@ -38,7 +38,7 @@ LOOP_INTERVAL   = float(os.environ.get("LOOP_INTERVAL",   "5"))   # seconds
 
 # Scaling bounds
 MIN_REPLICAS    = int(os.environ.get("MIN_REPLICAS", "1"))
-MAX_REPLICAS    = int(os.environ.get("MAX_REPLICAS", "10"))
+MAX_REPLICAS    = int(os.environ.get("MAX_REPLICAS", "20"))
 
 # SLO: p99 latency target
 SLO_P99_TARGET  = float(os.environ.get("SLO_P99_TARGET", "0.4"))  # < 0.5s with headroom
@@ -52,6 +52,8 @@ SCALE_DOWN_COOLDOWN = float(os.environ.get("SCALE_DOWN_COOLDOWN", "60"))  # s
 SCALE_DOWN_STABLE_WINDOWS = int(os.environ.get("SCALE_DOWN_STABLE_WINDOWS", "6"))
 
 # ── K8s client ────────────────────────────────────────────────────────────────
+# Load Kubernetes configuration from the pod environment when available,
+# otherwise fall back to the local kubeconfig for local development.
 def _load_k8s():
     try:
         config.load_incluster_config()
@@ -65,11 +67,13 @@ _apps_v1 = client.AppsV1Api()
 
 
 def get_current_replicas() -> int:
+    """Read the desired replica count from the target deployment spec."""
     dep = _apps_v1.read_namespaced_deployment(DEPLOYMENT_NAME, NAMESPACE)
     return dep.spec.replicas or 1
 
 
 def set_replicas(n: int):
+    """Patch the deployment replica count, enforcing configured min/max bounds."""
     n = max(MIN_REPLICAS, min(MAX_REPLICAS, n))
     body = {"spec": {"replicas": n}}
     _apps_v1.patch_namespaced_deployment(DEPLOYMENT_NAME, NAMESPACE, body)
@@ -83,6 +87,7 @@ _stable_count    = 0   # consecutive intervals with p99 < SLO * 0.5
 
 
 def get_metrics() -> dict | None:
+    """Fetch the latest monitoring snapshot from the monitoring service."""
     try:
         r = requests.get(MONITORING_URL + "/current", timeout=3)
         r.raise_for_status()
@@ -97,10 +102,12 @@ def decide(metrics: dict, current_replicas: int) -> int:
     Return the desired replica count.
 
     Decision logic:
-    - If p99 >= SLO_P99_TARGET      → scale up aggressively (×2 or +2)
+    - If p99 >= SLO_P99_TARGET      → scale up aggressively (×2)
     - If p99 >= SLO_WARN_MULT*SLO   → scale up moderately (+1)
-    - If p99 < SLO*0.5 (stable ×N) → scale down by 1
-    - Otherwise                      → hold
+    - If p99 < SLO*0.5 and stable   → scale down by 1
+    - Otherwise                      → hold current replica count
+
+    Stability tracking is used to avoid oscillation during quiet periods.
     """
     global _stable_count
 
@@ -127,6 +134,7 @@ def decide(metrics: dict, current_replicas: int) -> int:
 
     # ── Scale DOWN ────────────────────────────────────────────────────────────
     elif p99 < SLO_P99_TARGET * 0.5 and current_replicas > MIN_REPLICAS:
+        # Require a streak of low-latency windows before scaling down to avoid oscillation.
         _stable_count += 1
         if (_stable_count >= SCALE_DOWN_STABLE_WINDOWS
                 and now - _last_scale_down >= SCALE_DOWN_COOLDOWN):
@@ -136,6 +144,7 @@ def decide(metrics: dict, current_replicas: int) -> int:
             _stable_count = 0
             return desired
     else:
+        # Reset stability counter if latency is not sufficiently low.
         _stable_count = 0
 
     log.debug(f"p99={p99:.3f}s | replicas={current_replicas} | stable_count={_stable_count} → HOLD")
@@ -158,9 +167,11 @@ def run():
                 desired  = decide(metrics, current)
 
                 if desired > current:
+                    # Scale up immediately and record the last scale-up time.
                     set_replicas(desired)
                     _last_scale_up = time.time()
                 elif desired < current:
+                    # Scale down only when the strategy permits it.
                     set_replicas(desired)
                     _last_scale_down = time.time()
 

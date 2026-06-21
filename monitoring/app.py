@@ -41,6 +41,7 @@ _core_v1  = client.CoreV1Api()
 
 
 def _get_replica_count() -> int:
+    """Return the number of ready replicas for the target deployment."""
     try:
         dep = _apps_v1.read_namespaced_deployment(DEPLOYMENT_NAME, NAMESPACE)
         return dep.status.ready_replicas or 0
@@ -49,6 +50,7 @@ def _get_replica_count() -> int:
 
 
 def _get_requested_replicas() -> int:
+    """Return the target replica count configured on the K8s deployment."""
     try:
         dep = _apps_v1.read_namespaced_deployment(DEPLOYMENT_NAME, NAMESPACE)
         return dep.spec.replicas or 0
@@ -57,7 +59,10 @@ def _get_requested_replicas() -> int:
 
 
 def _poll():
-    """Background polling loop."""
+    """Background thread that polls dispatcher stats and Kubernetes replica counts.
+
+    The collected data is kept in memory for HTTP queries and also appended to a CSV file.
+    """
     os.makedirs(os.path.dirname(HISTORY_FILE), exist_ok=True)
     write_header = not os.path.exists(HISTORY_FILE)
 
